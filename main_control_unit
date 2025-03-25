@@ -1,0 +1,121 @@
+#include <GyverMAX6675.h>
+
+#define coolantsensorDivider 3300
+const float steinconstA = 0.001281515579;
+const float steinconstB = 0.0002636218288;
+const float steinconstC = 0.0000001401344732;
+const float iat_steinconstA = 0.001475460020;
+const float iat_steinconstB = 0.0002307520271;
+const float iat_steinconstC = 0.0000001026645277;
+
+float input_voltage = 5.09; //measured with multimeter
+
+#define CLK_PIN   18  // Пин SCK
+#define DATA_PIN  3  // Пин SO
+#define CS_PIN    8  // Пин CS
+GyverMAX6675<CLK_PIN, DATA_PIN, CS_PIN> sens;
+
+//---parsing chars
+#define PARSE_AMOUNT 6                                  // amount of values in array
+float intData[PARSE_AMOUNT];                               
+boolean recievedFlag;
+boolean getStarted;
+byte tmp;
+String string_convert = "";
+
+void setup() {
+    Serial.begin(115200); 
+    Serial.setTimeout(50);
+}
+
+void parsing() {
+  if (Serial.available() > 0) {
+    char incomingByte = Serial.read();
+    if (getStarted) {
+      if (incomingByte != ' ' && incomingByte != ';') {
+        string_convert += incomingByte;
+      } else {
+        intData[tmp] = string_convert.toFloat();
+        string_convert = "";
+        tmp++;
+      }
+    }
+    if (incomingByte == '$') {
+      getStarted = true;
+      tmp = 0;
+      string_convert = "";
+    }
+    if (incomingByte == ';') {
+      getStarted = false;
+      recievedFlag = true;
+    }
+  }
+}
+
+void loop() {
+  parsing(); 
+  if (recievedFlag) {                          
+  recievedFlag = false;
+  float average;
+  float out_voltage;
+  float steinhart;
+  float press_value;
+  //Port 2 - COOLANT TEMP SENSOR
+  average = intData[0];
+  average = (coolantsensorDivider*average)/(1023-average);
+  steinhart = log(average);
+  steinhart = pow(steinhart,3);
+  steinhart *= steinconstC;
+  steinhart += (steinconstB*(log(average)));
+  steinhart += steinconstA;
+  steinhart = 1.0/steinhart;
+  steinhart -= 273.15;
+  int coolant_temp = round(steinhart);
+  //Port 3 - AT OIL TEMP SENSOR
+  average = intData[1];
+  average = (coolantsensorDivider*average)/(1023-average);
+  steinhart = log(average);
+  steinhart = pow(steinhart,3);
+  steinhart *= steinconstC;
+  steinhart += (steinconstB*(log(average)));
+  steinhart += steinconstA;
+  steinhart = 1.0/steinhart;
+  steinhart -= 273.15;
+  int at_oil_temp = round(steinhart);
+  //Port 4 - ENGINE OIL TEMP SENSOR
+  average = intData[2];
+  average = (coolantsensorDivider*average)/(1023-average);
+  steinhart = log(average);
+  steinhart = pow(steinhart,3);
+  steinhart *= steinconstC;
+  steinhart += (steinconstB*(log(average)));
+  steinhart += steinconstA;
+  steinhart = 1.0/steinhart;
+  steinhart -= 273.15;
+  int eng_oil_temp = round(steinhart);
+  //Port 5 - IAT SENSOR
+  average = intData[3];
+  average = (coolantsensorDivider*average)/(1023-average);
+  steinhart = log(average);
+  steinhart = pow(steinhart,3);
+  steinhart *= iat_steinconstC;
+  steinhart += (iat_steinconstB*(log(average)));
+  steinhart += iat_steinconstA;
+  steinhart = 1.0/steinhart;
+  steinhart -= 273.15;
+  int iat_temp = round(steinhart);
+  //Port 6 - ENGINE OIL PRESSURE SENSOR
+  average = intData[4];
+  out_voltage = (average * input_voltage) / 1023;
+  press_value = out_voltage*12.5/input_voltage-1.25;
+  int oil_press = press_value*10;
+  //Port 7 - MAP SENSOR
+  average = intData[5];
+  out_voltage = (average * input_voltage) / 1023;
+  press_value = out_voltage*3.2941/input_voltage-1.0659;
+  int map = press_value*100;
+  //Port 8 - EGT
+  int egt = round(sens.getTemp());
+  Serial.println("$"+String(oil_press)+" "+String(eng_oil_temp)+" "+String(egt)+" "+String(map)+" "+String(at_oil_temp)+" "+String(coolant_temp)+" "+String(iat_temp)+";");
+}
+}
